@@ -65,6 +65,7 @@ __email__="martin.fiedler@gmx.net"
 
 
 import sys,os,os.path,array,getopt,random,types,fnmatch,operator,string,eyed3
+from functools import cmp_to_key, reduce
 
 KnownProps=('filename','size','ignore','type','shuffle','reuse','bookmark')
 Rules=[
@@ -100,7 +101,7 @@ def open_log():
   global logfile
   if Options['logging']:
     try:
-      logfile=file(Options['logfile'],"w")
+      logfile=open(Options['logfile'],"w")
     except IOError:
       logfile=None
   else:
@@ -110,10 +111,10 @@ def open_log():
 def log(line="",newline=True):
   global logfile
   if newline:
-    print line
+    print (line)
     line+="\n"
   else:
-    print line,
+    print (line)
     line+=" "
   if logfile:
     try:
@@ -253,13 +254,14 @@ def write_to_db(filename):
   entry=props['reuse'] and (filename in KnownEntries) and KnownEntries[filename]
   if not entry:
     header[29]=props['type']
-    entry=header.tostring()+ \
-      "".join([c+"\0" for c in filename[:261]])+ \
-      "\0"*(525-2*len(filename))
+    entry=bytes(header)+ \
+      b"".join([bytes(c,"utf-8") +b"\0" for c in filename[:261]])+ \
+      b"\0"*(525-2*len(filename))
 
   # write entry, modifying shuffleflag and bookmarkflag at least
   log("=> %s"%(filename))
-  iTunesSD.write(entry[:555]+chr(props['shuffle'])+chr(props['bookmark'])+entry[557])
+  b = entry[:555]+bytes(chr(props['shuffle']), "utf-8")+bytes(chr(props['bookmark']), "utf-8")+entry[557:558]
+  iTunesSD.write(b)
   if props['shuffle']: domains[-1].append(total_count)
   total_count+=1
   return 1
@@ -268,10 +270,10 @@ def write_to_db(filename):
 def make_key(s):
   if not s: return s
   s=s.lower()
-  for i in xrange(len(s)):
+  for i in range(len(s)):
     if s[i].isdigit(): break
   if not s[i].isdigit(): return s
-  for j in xrange(i,len(s)):
+  for j in range(i,len(s)):
     if not s[j].isdigit(): break
   if s[j].isdigit(): j+=1
   return (s[:i],int(s[i:j]),make_key(s[j:]))
@@ -282,8 +284,11 @@ def key_repr(x):
   else:
     return x
 
+def cmp(a, b):
+  return (a > b) - (a < b) 
+
 def cmp_key(a,b):
-  if type(a)==types.TupleType and type(b)==types.TupleType:
+  if type(a)==tuple and type(b)==tuple:
     if (a[3]==-1 or b[3]==-1):
       return cmp(a[0],b[0]) or cmp(a[1],b[1]) or cmp_key(a[2],b[2])
     else:
@@ -351,11 +356,11 @@ def browse(path, interactive):
   for file in files:
     if file[0]==1:
       audiofile=eyed3.load("%s/%s"%(path, file[2]))
-      if not audiofile.tag is None and not audiofile.tag.track_num is None:
+      if not audiofile.tag is None and not audiofile.tag.track_num[0] is None:
         track_num=audiofile.tag.track_num[0]
       else:
         track_num=-1
-      if not audiofile.tag is None and not audiofile.tag.disc_num is None:
+      if not audiofile.tag is None and not audiofile.tag.disc_num[0] is None:
         disk_num=audiofile.tag.disc_num[0]
       else:
         disk_num=1
@@ -366,7 +371,7 @@ def browse(path, interactive):
     newfiles.append(newfile)
  
   files=newfiles 
-  files.sort(cmp_key)
+  files.sort(key=cmp_to_key(cmp_key))
   count=len([None for x in files if x[0]])
   if count: domains.append([])
 
@@ -390,7 +395,7 @@ def browse(path, interactive):
 
 def stringval(i):
   if i<0: i+=0x1000000
-  return "%c%c%c"%(i&0xFF,(i>>8)&0xFF,(i>>16)&0xFF)
+  return b"%c%c%c"%(i&0xFF,(i>>8)&0xFF,(i>>16)&0xFF)
 
 def listval(i):
   if i<0: i+=0x1000000
@@ -403,12 +408,11 @@ def make_playback_state(volume=None):
   log("Setting playback state ...",False)
   PState=[]
   try:
-    f=file("iPod_Control/iTunes/iTunesPState","rb")
-    a=array.array('B')
-    a.fromstring(f.read())
-    PState=a.tolist()
+    f=open("iPod_Control/iTunes/iTunesPState","rb")
+    a=f.read()
+    PState=list(a)
     f.close()
-  except IOError,EOFError:
+  except (IOError,EOFError):
     del PState[:]
   if len(PState)!=21:
     PState=listval(29)+[0]*15+listval(1)  # volume 29, FW ver 1.0
@@ -416,7 +420,7 @@ def make_playback_state(volume=None):
   if volume is not None:
     PState[:3]=listval(volume)
   try:
-    f=file("iPod_Control/iTunes/iTunesPState","wb")
+    f=open("iPod_Control/iTunes/iTunesPState","wb")
     array.array('B',PState).tofile(f)
     f.close()
   except IOError:
@@ -429,8 +433,8 @@ def make_playback_state(volume=None):
 def make_stats(count):
   log("Creating statistics file ...",False)
   try:
-    file("iPod_Control/iTunes/iTunesStats","wb").write(\
-         stringval(count)+"\0"*3+(stringval(18)+"\xff"*3+"\0"*12)*count)
+    open("iPod_Control/iTunes/iTunesStats","wb").write(\
+         stringval(count)+b"\0"*3+(stringval(18)+b"\xff"*3+b"\0"*12)*count)
   except IOError:
     log("FAILED.")
     return 0
@@ -446,21 +450,21 @@ def smart_shuffle():
     slice_count=max(map(len,domains))
   except ValueError:
     return []
-  slices=[[] for x in xrange(slice_count)]
+  slices=[[] for x in range(slice_count)]
   slice_fill=[0]*slice_count
 
-  for d in xrange(len(domains)):
+  for d in range(len(domains)):
     used=[]
     if not domains[d]: continue
     for n in domains[d]:
       # find slices where the nearest track of the same domain is far away
-      metric=[min([slice_count]+[min(abs(s-u),abs(s-u+slice_count),abs(s-u-slice_count)) for u in used]) for s in xrange(slice_count)]
+      metric=[min([slice_count]+[min(abs(s-u),abs(s-u+slice_count),abs(s-u-slice_count)) for u in used]) for s in range(slice_count)]
       thresh=(max(metric)+1)/2
-      farthest=[s for s in xrange(slice_count) if metric[s]>=thresh]
+      farthest=[s for s in range(slice_count) if metric[s]>=thresh]
 
       # find emptiest slices
       thresh=(min(slice_fill)+max(slice_fill)+1)/2
-      emptiest=[s for s in xrange(slice_count) if slice_fill[s]<=thresh if (s in farthest)]
+      emptiest=[s for s in range(slice_count) if slice_fill[s]<=thresh if (s in farthest)]
 
       # choose one of the remaining candidates and add the track to the chosen slice
       s=random.choice(emptiest or farthest)
@@ -490,7 +494,7 @@ def make_shuffle(count):
     seq=range(count)
     random.shuffle(seq)
   try:
-    file("iPod_Control/iTunes/iTunesShuffle","wb").write("".join(map(stringval,seq)))
+    open("iPod_Control/iTunes/iTunesShuffle","wb").write(b"".join(map(stringval,seq)))
   except IOError:
     log("FAILED.")
     return 0
@@ -507,7 +511,7 @@ def main(dirs):
   log()
 
   try:
-    f=file("rebuild_db.rules","r")
+    f=open("rebuild_db.rules","r")
     Rules+=filter(None,map(ParseRuleLine,f.read().split("\n")))
     f.close()
   except IOError:
@@ -523,13 +527,13 @@ Please make sure that:
   header=array.array('B')
   iTunesSD=None
   try:
-    iTunesSD=file("iPod_Control/iTunes/iTunesSD","rb")
+    iTunesSD=open("iPod_Control/iTunes/iTunesSD","rb")
     header.fromfile(iTunesSD,51)
     if Options['reuse']:
       iTunesSD.seek(18)
       entry=iTunesSD.read(558)
       while len(entry)==558:
-        filename=entry[33::2].split("\0",1)[0]
+        filename=entry[33::2].split(b"\0",1)[0]
         KnownEntries[filename]=entry
         entry=iTunesSD.read(558)
   except (IOError,EOFError):
@@ -553,7 +557,7 @@ Please make sure that:
 
   log()
   try:
-    iTunesSD=file("iPod_Control/iTunes/iTunesSD","wb")
+    iTunesSD=open("iPod_Control/iTunes/iTunesSD","wb")
     header[:18].tofile(iTunesSD)
   except IOError:
     log("""ERROR: Cannot write to the iPod database file (iTunesSD)!
@@ -574,7 +578,7 @@ Please make sure that:
     log()
     log("Fixing iTunesSD header.")
     iTunesSD.seek(0)
-    iTunesSD.write("\0%c%c"%(total_count>>8,total_count&0xFF))
+    iTunesSD.write(b"\0%c%c"%(total_count>>8,total_count&0xFF))
     iTunesSD.close()
   except IOError:
     log("ERROR: Some strange errors occured while writing iTunesSD.")
@@ -597,8 +601,8 @@ Please make sure that:
 
 
 def help():
-  print "Usage: %s [OPTION]... [DIRECTORY]..."%sys.argv[0]
-  print """Rebuild iPod shuffle database.
+  print ("Usage: %s [OPTION]... [DIRECTORY]..."%sys.argv[0])
+  print ("""Rebuild iPod shuffle database.
 
 Mandatory arguments to long options are mandatory for short options too.
   -h, --help         display this help text
@@ -611,19 +615,19 @@ Mandatory arguments to long options are mandatory for short options too.
   -L, --logfile      set log file name
 
 Must be called from the iPod's root directory. By default, the whole iPod is
-searched for playable files, unless at least one DIRECTORY is specified."""
+searched for playable files, unless at least one DIRECTORY is specified.""")
 
 
 def opterr(msg):
-  print "parse error:",msg
-  print "use `%s -h' to get help"%sys.argv[0]
+  print ("parse error:",msg)
+  print ("use `%s -h' to get help"%sys.argv[0])
   sys.exit(1)
 
 def parse_options():
   try:
     opts,args=getopt.getopt(sys.argv[1:],"hiv:snlfL:r",\
               ["help","interactive","volume=","nosmart","nochdir","nolog","force","logfile=","rename"])
-  except getopt.GetoptError, message:
+  except getopt.GetoptError as message:
     opterr(message)
   for opt,arg in opts:
     if opt in ("-h","--help"):
