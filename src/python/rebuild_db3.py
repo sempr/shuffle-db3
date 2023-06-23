@@ -356,11 +356,11 @@ def browse(path, interactive):
   for file in files:
     if file[0]==1:
       audiofile=eyed3.load("%s/%s"%(path, file[2]))
-      if not audiofile.tag is None and not audiofile.tag.track_num[0] is None:
+      if not audiofile is None and not audiofile.tag is None and not audiofile.tag.track_num[0] is None:
         track_num=audiofile.tag.track_num[0]
       else:
         track_num=-1
-      if not audiofile.tag is None and not audiofile.tag.disc_num[0] is None:
+      if not audiofile is None and not audiofile.tag is None and not audiofile.tag.disc_num[0] is None:
         disk_num=audiofile.tag.disc_num[0]
       else:
         disk_num=1
