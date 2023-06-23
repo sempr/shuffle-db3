@@ -1,7 +1,7 @@
 # iPod shuffle Database Builder
 
-`src/python/rebuild_db3.py` is a python3 version
-`src/python/rebuild_db2.py` is a python2 version I found but doesn't depend on `eyed3` so it's probably missing some functionality.
+- `src/python/rebuild_db3.py` is a python3 version
+- `src/python/rebuild_db2.py` is a python2 version I found but doesn't depend on `eyed3` so it's probably missing some functionality.
 
 # Usage
 
